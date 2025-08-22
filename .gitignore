@@ -1,3 +1,8 @@
+# osteo_gdl specific
+data
+run.sh
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
