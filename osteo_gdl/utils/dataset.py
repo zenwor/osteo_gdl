@@ -11,10 +11,22 @@ from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
+import torch.nn as nn
+
+from osteo_gdl.models.riem.oehnet import OEHNet
+from osteo_gdl.models.riem.ospnet import OSPNet
+from osteo_gdl.models.riem.dospnet import DOSPNet
 
 
 class OsteosarcomaDataset(Dataset):
-    def __init__(self, imgs, feats, preprocessed: bool = True, train: bool = False):
+    def __init__(
+        self,
+        imgs,
+        feats,
+        preprocessed: bool = True,
+        train: bool = False,
+        model: nn.Module = None,
+    ):
         if imgs is not None:
             self.preprocessed = preprocessed
             self.train = train
@@ -40,16 +52,22 @@ class OsteosarcomaDataset(Dataset):
             self.maj_tfms = None
             self.min_tfms = None
             if preprocessed:
-                self.make_tfms()
+                self.make_tfms(model)
 
-    def make_tfms(self):
-        self.tfms = transforms.Compose(
-            [
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=0.5, std=0.5),
-            ]
-        )
+    def make_tfms(self, model: nn.Module):
+        print(model)
+        if (
+            isinstance(model, OEHNet)
+            or isinstance(model, OSPNet)
+            or isinstance(model, DOSPNet)
+        ):
+            self.tfms = transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=0.5, std=0.5),
+                ]
+            )
 
     def __len__(self):
         return self.nimgs
@@ -104,6 +122,7 @@ def make_datasets(
     val_size: float,
     test_size: float,
     balance: bool = False,
+    model: nn.Module = None,
 ) -> Tuple[Dataset, Union[None, Dataset], Dataset]:
     ds = OsteosarcomaDataset(imgs, feats, False)
     imgs, labels = ds.get_img_label_pairs()
@@ -138,16 +157,17 @@ def make_datasets(
         test_size=test_size,
     )
 
-    train_ds = OsteosarcomaDataset(train_imgs, train_labels, train=True)
+    train_ds = OsteosarcomaDataset(train_imgs, train_labels, train=True, model=model)
     val_ds = (
         None
         if val_imgs is None
         else OsteosarcomaDataset(
             val_imgs,
             val_labels,
+            model=model,
         )
     )
-    test_ds = OsteosarcomaDataset(test_imgs, test_labels)
+    test_ds = OsteosarcomaDataset(test_imgs, test_labels, model=model)
     return train_ds, val_ds, test_ds
 
 

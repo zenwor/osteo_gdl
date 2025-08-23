@@ -4,6 +4,9 @@ from osteo_gdl.utils.data import load_imgs_feats
 from osteo_gdl.utils.dataset import make_dataloader, make_datasets
 from osteo_gdl.utils.parse import parse_args
 
+from osteo_gdl.train import make_optim, make_criterion, train
+from osteo_gdl.models.model import make_model
+
 cls_map = dict()
 
 
@@ -17,13 +20,17 @@ if __name__ == "__main__":
     args = parse_args()
     setup_env(args)
 
+    # Create model -- useful for preparing transformations
+    model = make_model(args).to(args.device)
+    log.info(f"Model: {model}")
+
     # Load images and associated features (labels)
     imgs, feats = load_imgs_feats(args.imgs_path, args.feats_path, cls_map)
     log.info(f"Found {len(imgs)} samples.")
 
     # Create datasets
     train_ds, val_ds, test_ds = make_datasets(
-        imgs, feats, args.val_size, args.test_size
+        imgs, feats, args.val_size, args.test_size, model=model
     )
     log.info(f"Train dataset size: {len(train_ds)}")
     log.info(f"Validation dataset size: {len(val_ds)}")
@@ -35,4 +42,22 @@ if __name__ == "__main__":
         None if val_ds is None else make_dataloader(val_ds, args.batch_size)
     )  # noqa: E501
     test_dl = make_dataloader(test_ds, args.batch_size)
-    log.info("Successfully createad train, validation and test DataLoaders")
+    log.info("Successfully createad train, validation and test DataLoaders.")
+
+    # Optimizer and loss function
+    optim = make_optim(model, args.eucl_lr, args.eucl_wd, args.riem_lr)
+    criterion = make_criterion(args.criterion, args.weighted_criterion, train_ds)
+    log.info(f"Using optimizer: {optim}")
+    log.info(f"Using criterion: {criterion}")
+
+    # Launch training
+    train(
+        model,
+        train_dl,
+        val_dl,
+        test_dl,
+        optim,
+        criterion,
+        args.num_epochs,
+        args.device,
+    )
