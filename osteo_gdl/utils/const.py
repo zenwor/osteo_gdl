@@ -1,12 +1,14 @@
 import torch
+import torchvision.models as backbone_models
 from torch.optim import Adam, AdamW, SGD
 from geoopt.optim import RiemannianAdam, RiemannianSGD
 from torch.nn import CrossEntropyLoss
-import torchvision.models as backbone_models
+from torch.nn import ReLU, LeakyReLU, GELU
 
-from osteo_gdl.models.riem.oehnet import OEHNet
-from osteo_gdl.models.riem.ospnet import OSPNet
-from osteo_gdl.models.riem.dospnet import DOSPNet
+from torch_geometric.nn import GATConv, SAGEConv, GCNConv
+from torch_geometric.nn import (
+    global_mean_pool, global_max_pool, global_add_pool
+)
 
 # Data
 DEF_IMGS_PATH = "$DATA_PATH"
@@ -14,18 +16,51 @@ DEF_FEATS_PATH = "$DATA_PATH/feats.csv"
 FEATS_COLS = ["image.name", "classification"]
 
 # Model
-DEF_PRETRAINED = True
-MODEL_MAP = {"oehnet": OEHNet, "ospnet": OSPNet, "dospnet": DOSPNet}
-MODELS = MODEL_MAP.keys()
 DEF_MODEL = "oehnet"
-
+MODELS = ["oehnet", "ospnet", "osteognn"]
+DEF_PRETRAINED = True
 BACKBONE_MAP = {
     "resnet18": backbone_models.resnet18,
     "resnet50": backbone_models.resnet50,
 }
 BACKBONES = BACKBONE_MAP.keys()
 DEF_BACKBONE_OUT_DIM = 128
+
+# Riemannian models
 DEF_OEHNET_C = 1.0
+DEF_REDUCED_DIMS = [64, 32, 16]
+
+# GNN models
+DEF_PATCH_SIZE = 16
+GNN_CONV_MAP = {
+    "gatconv": GATConv,
+    "sageconv": SAGEConv,
+    "gcnconv": GCNConv
+}
+GNN_POOL_MAP = {
+    "mean": global_mean_pool,
+    "max": global_max_pool,
+    "add": global_add_pool,
+    "global_mean_pool": global_mean_pool,
+    "global_max_pool": global_max_pool,
+    "global_add_pool": global_add_pool,
+}
+DEF_GNN_POOL = "mean"
+ACT_MAP = {
+    "relu": ReLU,
+    "leaky_relu": LeakyReLU,
+    "gelu": GELU,
+}
+DEF_GNN_CONV = "sageconv"
+DEF_GNN_DIMS = [256, 256, 128]
+DEF_GNN_ACT = "relu"
+
+DEF_DROPOUT = 0.3
+DEF_K = 6
+
+# CLS
+DEF_CLS_DIMS = [128, 128]
+DEF_CLS_ACT = "relu"
 
 # Training
 DEF_EUCL_OPTIM = "adamw"
@@ -60,3 +95,12 @@ CLASSES = DEF_CLASSES
 
 DEF_VAL_SIZE = 0.10
 DEF_TEST_SIZE = 0.25
+
+def get_gnn_conv(conv: str):
+    return GNN_CONV_MAP.get(conv, None)
+
+def get_gnn_pool(pool: str):
+    return GNN_POOL_MAP.get(pool, None)
+
+def get_act(act: str):
+    return ACT_MAP.get(act, None)

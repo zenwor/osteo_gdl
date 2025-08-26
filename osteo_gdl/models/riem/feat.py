@@ -53,6 +53,9 @@ class ViTFeatureExtractor(nn.Module):
             if pretrained
             else ViTModel(ViTConfig())
         )
+        hidden_dim = self.vit.config.hidden_size
+        if out_dim == -1:
+            out_dim = hidden_dim
         self.proj = nn.Linear(self.vit.config.hidden_size, out_dim)
 
     def forward(self, x):
@@ -77,7 +80,7 @@ def make_backbone(
             if pretrained:
                 base = getattr(models, backbone)(pretrained=True)
             else:
-                base = getattr(models, backbone)(weights=None)
+                base = getattr(models, backbone)(pretrained=False)
             return base
         else:
             return ResNetFeatureExtractor(

@@ -13,17 +13,13 @@ from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
 import torch.nn as nn
 
-from osteo_gdl.models.riem.oehnet import OEHNet
-from osteo_gdl.models.riem.ospnet import OSPNet
-from osteo_gdl.models.riem.dospnet import DOSPNet
-
-
 class OsteosarcomaDataset(Dataset):
     def __init__(
         self,
         imgs,
         feats,
         preprocessed: bool = True,
+        aug: bool = False,
         train: bool = False,
         model: nn.Module = None,
     ):
@@ -36,7 +32,6 @@ class OsteosarcomaDataset(Dataset):
             else:
                 self.img_names, self.imgs, self.labels = [], [], []
                 for img_path in imgs:
-                    img = Image.open(img_path)
                     case = os.path.splitext(os.path.basename(img_path))[0]
                     cls_vals = feats.loc[
                         feats["image.name"] == case, "classification"
@@ -46,29 +41,52 @@ class OsteosarcomaDataset(Dataset):
                     else:
                         continue
                     self.img_names.append(case)
-                    self.imgs.append(img)
+                    self.imgs.append(img_path)
                     self.labels.append(cls)
             self.nimgs = len(self.imgs)
+            
             self.maj_tfms = None
             self.min_tfms = None
+            self.aug = aug
+            
             if preprocessed:
                 self.make_tfms(model)
 
     def make_tfms(self, model: nn.Module):
-        print(model)
-        if (
-            isinstance(model, OEHNet)
-            or isinstance(model, OSPNet)
-            or isinstance(model, DOSPNet)
-        ):
-            self.tfms = transforms.Compose(
-                [
+        if self.train:  # val / test
+            if self.aug:
+                self.maj_tfms = transforms.Compose([
                     transforms.Resize((224, 224)),
                     transforms.ToTensor(),
-                    transforms.Normalize(mean=0.5, std=0.5),
-                ]
-            )
-
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ])
+                self.min_tfms = transforms.Compose([
+                    transforms.Resize((224, 224)), 
+                    transforms.RandomHorizontalFlip(p=0.5),
+                    transforms.RandomVerticalFlip(p=0.5),
+                    transforms.RandomRotation(degrees=15),
+                    transforms.ColorJitter(brightness=0.1, contrast=0.1),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
+                log.info(self.maj_tfms)
+                log.info(self.min_tfms)
+                
+            else:
+                self.tfms = transforms.Compose([
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ])
+                log.info(self.tfms)
+        else:
+            self.tfms = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+            log.info(self.tfms)
+                    
     def __len__(self):
         return self.nimgs
 
@@ -77,9 +95,17 @@ class OsteosarcomaDataset(Dataset):
             return self.imgs[idx], self.labels[idx]
 
         y = self.labels[idx]
-        img = self.imgs[idx]
+        img = Image.open(self.imgs[idx]).convert("RGB")
 
-        img = self.tfms(img)
+        if self.aug and self.train:
+            # This piece of code does not generalize well
+            # TODO: Fix
+            if y == 2: # NVT
+                img = self.min_tfms(img)
+            else:
+                img = self.maj_tfms(img)
+        else:
+            img = self.tfms(img)
         return img, torch.tensor(int(y), dtype=torch.long)
 
     def get_img_label_pairs(self):
@@ -121,6 +147,7 @@ def make_datasets(
     feats: pd.DataFrame,
     val_size: float,
     test_size: float,
+    aug: bool = False,
     balance: bool = False,
     model: nn.Module = None,
 ) -> Tuple[Dataset, Union[None, Dataset], Dataset]:
@@ -157,22 +184,23 @@ def make_datasets(
         test_size=test_size,
     )
 
-    train_ds = OsteosarcomaDataset(train_imgs, train_labels, train=True, model=model)
+    train_ds = OsteosarcomaDataset(train_imgs, train_labels, aug=aug, train=True, model=model)
     val_ds = (
         None
         if val_imgs is None
         else OsteosarcomaDataset(
             val_imgs,
             val_labels,
+            aug=aug, 
             model=model,
         )
     )
-    test_ds = OsteosarcomaDataset(test_imgs, test_labels, model=model)
+    test_ds = OsteosarcomaDataset(test_imgs, test_labels, aug=aug, model=model)
     return train_ds, val_ds, test_ds
 
 
 def make_sample_weights(ds, device) -> torch.tensor:
-    labels = ds.labels
+    labels = np.array(ds.labels).astype(int)
     class_counts = np.bincount(labels)
     weights_per_class = 1.0 / class_counts
     weights = weights_per_class[labels]
@@ -180,16 +208,24 @@ def make_sample_weights(ds, device) -> torch.tensor:
     return torch.tensor(weights, dtype=torch.float32, device=device)
 
 
+def make_class_weights(ds, device):
+    labels = np.array(ds.labels).astype(int)
+    class_counts = np.bincount(labels)
+    weights_per_class = 1.0 / class_counts
+    weights_per_class = weights_per_class / weights_per_class.sum() * len(class_counts)
+    return torch.tensor(weights_per_class, dtype=torch.float32, device=device)
+
+
 # DataLoader
-def make_wrs(ds) -> WeightedRandomSampler:
-    weights = make_sample_weights(ds)
+def make_wrs(ds, device) -> WeightedRandomSampler:
+    weights = make_sample_weights(ds, device)
     return WeightedRandomSampler(weights, num_samples=len(ds), replacement=True)
 
 
-def make_dataloader(ds: Dataset, batch_size: int, resample: bool = False) -> DataLoader:
+def make_dataloader(ds: Dataset, batch_size: int, device: str = "cuda", resample: bool = False) -> DataLoader:
     if resample:
         return DataLoader(
-            ds, batch_size=batch_size, sampler=make_wrs(ds), num_workers=0
+            ds, batch_size=batch_size, sampler=make_wrs(ds, device), num_workers=0
         )
     else:
         return DataLoader(ds, batch_size=batch_size, num_workers=0)

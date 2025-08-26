@@ -1,7 +1,8 @@
 # osteo_gdl specific
 data
 run.sh
-
+exp/*
+paper
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

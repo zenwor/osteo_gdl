@@ -24,4 +24,5 @@ echo "Environment setup complete."
 export PROJ_ROOT=$PWD
 export SRC_PATH="$PWD/osteo_gdl"
 export DATA_PATH="$PROJ_ROOT/data/"
+export EXP_PATH="$PROJ_ROOT/exp/"
 export PYTHONPATH=${PROJ_ROOT}

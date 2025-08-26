@@ -7,7 +7,7 @@ from osteo_gdl.models.riem.feat import make_backbone
 
 
 class HyperbolicLinear(nn.Module):
-    def __init__(self, in_features, out_features, c=1.0, bias=True):
+    def __init__(self, in_features, out_features, c = 1.0, bias = True):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
